@@ -1,5 +1,6 @@
 from data import COCODetection, get_label_map, MEANS, COLORS
 from yolact import Yolact
+from yolact_onnx import YolactOnnx
 from utils.augmentations import BaseTransform, FastBaseTransform, Resize
 from utils.functions import MovingAverage, ProgressBar
 from layers.box_utils import jaccard, center_size, mask_iou
@@ -28,6 +29,7 @@ from PIL import Image
 
 import matplotlib.pyplot as plt
 import cv2
+from layers import Detect
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -132,7 +134,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, fps_str=''):
+def prep_display(net, dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, fps_str=''):
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
     """
@@ -146,7 +148,10 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     with timer.env('Postprocess'):
         save = cfg.rescore_bbox
         cfg.rescore_bbox = True
-        t = postprocess(dets_out, w, h, visualize_lincomb = args.display_lincomb,
+        
+        preds = net.detect({'loc': dets_out[0], 'conf': dets_out[1], 'mask':dets_out[2], 'priors': dets_out[3], 'proto': dets_out[4]}, net)
+
+        t = postprocess(preds, w, h, visualize_lincomb = args.display_lincomb,
                                         crop_masks        = args.crop,
                                         score_threshold   = args.score_threshold)
         cfg.rescore_bbox = save
@@ -192,6 +197,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         
         # Prepare the RGB images for each mask given their color (size [num_dets, h, w, 1])
         colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
+       
+
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
 
         # This is 1 everywhere except for 1-mask_alpha where the mask is
@@ -597,7 +604,7 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
 
-    img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
+    img_numpy = prep_display(net, preds, frame, None, None, undo_transform=False)
     
     if save_path is None:
         img_numpy = img_numpy[:, :, (2, 1, 0)]
@@ -634,17 +641,14 @@ class CustomDataParallel(torch.nn.DataParallel):
         return sum(outputs, [])
 
 def evalvideo(net:Yolact, path:str, out_path:str=None):
-    # If the path is a digit, parse it as a webcam index
-    is_webcam = path.isdigit()
     
+    # I had problems using the original code that display/convert to video. So I rewrited this part with an simpler code =).
+
     # If the input image size is constant, this make things faster (hence why we can use it in a video setting).
-    cudnn.benchmark = True
+    cudnn.benchmark =  True
     
-    if is_webcam:
-        vid = cv2.VideoCapture(int(path))
-    else:
-        vid = cv2.VideoCapture(path)
-    
+    vid = cv2.VideoCapture(path)
+
     if not vid.isOpened():
         print('Could not open video "%s"' % path)
         exit(-1)
@@ -653,219 +657,36 @@ def evalvideo(net:Yolact, path:str, out_path:str=None):
     frame_width  = round(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = round(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    if is_webcam:
-        num_frames = float('inf')
-    else:
-        num_frames = round(vid.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    net = CustomDataParallel(net).cuda()
-    transform = torch.nn.DataParallel(FastBaseTransform()).cuda()
-    frame_times = MovingAverage(100)
-    fps = 0
-    frame_time_target = 1 / target_fps
-    running = True
-    fps_str = ''
-    vid_done = False
-    frames_displayed = 0
+    num_frames = round(vid.get(cv2.CAP_PROP_FRAME_COUNT))
 
     if out_path is not None:
         out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), target_fps, (frame_width, frame_height))
 
-    def cleanup_and_exit():
-        print()
-        pool.terminate()
-        vid.release()
-        if out_path is not None:
-            out.release()
-        cv2.destroyAllWindows()
-        exit()
+    while(vid.isOpened()):
+        ret, frame = vid.read()
+        if not ret:
+            break
+        
+        frame = torch.from_numpy(frame).cuda().float()
+        batch = FastBaseTransform()(frame.unsqueeze(0))
+        preds = net(batch)
 
-    def get_next_frame(vid):
-        frames = []
-        for idx in range(args.video_multiframe):
-            frame = vid.read()[1]
-            if frame is None:
-                return frames
-            frames.append(frame)
-        return frames
+        out_img = prep_display(net, preds, frame, None, None, undo_transform=False)
+        
 
-    def transform_frame(frames):
-        with torch.no_grad():
-            frames = [torch.from_numpy(frame).cuda().float() for frame in frames]
-            return frames, transform(torch.stack(frames, 0))
+        if out_path is None:
+            cv2.imshow('hey =)', out_img)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        else:
+            out.write(out_img)
 
-    def eval_network(inp):
-        with torch.no_grad():
-            frames, imgs = inp
-            num_extra = 0
-            while imgs.size(0) < args.video_multiframe:
-                imgs = torch.cat([imgs, imgs[0].unsqueeze(0)], dim=0)
-                num_extra += 1
-            out = net(imgs)
-            if num_extra > 0:
-                out = out[:-num_extra]
-            return frames, out
+    vid.release()
+    if out_path is not None:
+        out.release()
+    cv2.destroyAllWindows()
+    exit()
 
-    def prep_frame(inp, fps_str):
-        with torch.no_grad():
-            frame, preds = inp
-            return prep_display(preds, frame, None, None, undo_transform=False, class_color=True, fps_str=fps_str)
-
-    frame_buffer = Queue()
-    video_fps = 0
-
-    # All this timing code to make sure that 
-    def play_video():
-        try:
-            nonlocal frame_buffer, running, video_fps, is_webcam, num_frames, frames_displayed, vid_done
-
-            video_frame_times = MovingAverage(100)
-            frame_time_stabilizer = frame_time_target
-            last_time = None
-            stabilizer_step = 0.0005
-            progress_bar = ProgressBar(30, num_frames)
-
-            while running:
-                frame_time_start = time.time()
-
-                if not frame_buffer.empty():
-                    next_time = time.time()
-                    if last_time is not None:
-                        video_frame_times.add(next_time - last_time)
-                        video_fps = 1 / video_frame_times.get_avg()
-                    if out_path is None:
-                        cv2.imshow(path, frame_buffer.get())
-                    else:
-                        out.write(frame_buffer.get())
-                    frames_displayed += 1
-                    last_time = next_time
-
-                    if out_path is not None:
-                        if video_frame_times.get_avg() == 0:
-                            fps = 0
-                        else:
-                            fps = 1 / video_frame_times.get_avg()
-                        progress = frames_displayed / num_frames * 100
-                        progress_bar.set_val(frames_displayed)
-
-                        print('\rProcessing Frames  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
-                            % (repr(progress_bar), frames_displayed, num_frames, progress, fps), end='')
-
-                
-                # This is split because you don't want savevideo to require cv2 display functionality (see #197)
-                if out_path is None and cv2.waitKey(1) == 27:
-                    # Press Escape to close
-                    running = False
-                if not (frames_displayed < num_frames):
-                    running = False
-
-                if not vid_done:
-                    buffer_size = frame_buffer.qsize()
-                    if buffer_size < args.video_multiframe:
-                        frame_time_stabilizer += stabilizer_step
-                    elif buffer_size > args.video_multiframe:
-                        frame_time_stabilizer -= stabilizer_step
-                        if frame_time_stabilizer < 0:
-                            frame_time_stabilizer = 0
-
-                    new_target = frame_time_stabilizer if is_webcam else max(frame_time_stabilizer, frame_time_target)
-                else:
-                    new_target = frame_time_target
-
-                next_frame_target = max(2 * new_target - video_frame_times.get_avg(), 0)
-                target_time = frame_time_start + next_frame_target - 0.001 # Let's just subtract a millisecond to be safe
-                
-                if out_path is None or args.emulate_playback:
-                    # This gives more accurate timing than if sleeping the whole amount at once
-                    while time.time() < target_time:
-                        time.sleep(0.001)
-                else:
-                    # Let's not starve the main thread, now
-                    time.sleep(0.001)
-        except:
-            # See issue #197 for why this is necessary
-            import traceback
-            traceback.print_exc()
-
-
-    extract_frame = lambda x, i: (x[0][i] if x[1][i]['detection'] is None else x[0][i].to(x[1][i]['detection']['box'].device), [x[1][i]])
-
-    # Prime the network on the first frame because I do some thread unsafe things otherwise
-    print('Initializing model... ', end='')
-    first_batch = eval_network(transform_frame(get_next_frame(vid)))
-    print('Done.')
-
-    # For each frame the sequence of functions it needs to go through to be processed (in reversed order)
-    sequence = [prep_frame, eval_network, transform_frame]
-    pool = ThreadPool(processes=len(sequence) + args.video_multiframe + 2)
-    pool.apply_async(play_video)
-    active_frames = [{'value': extract_frame(first_batch, i), 'idx': 0} for i in range(len(first_batch[0]))]
-
-    print()
-    if out_path is None: print('Press Escape to close.')
-    try:
-        while vid.isOpened() and running:
-            # Hard limit on frames in buffer so we don't run out of memory >.>
-            while frame_buffer.qsize() > 100:
-                time.sleep(0.001)
-
-            start_time = time.time()
-
-            # Start loading the next frames from the disk
-            if not vid_done:
-                next_frames = pool.apply_async(get_next_frame, args=(vid,))
-            else:
-                next_frames = None
-            
-            if not (vid_done and len(active_frames) == 0):
-                # For each frame in our active processing queue, dispatch a job
-                # for that frame using the current function in the sequence
-                for frame in active_frames:
-                    _args =  [frame['value']]
-                    if frame['idx'] == 0:
-                        _args.append(fps_str)
-                    frame['value'] = pool.apply_async(sequence[frame['idx']], args=_args)
-                
-                # For each frame whose job was the last in the sequence (i.e. for all final outputs)
-                for frame in active_frames:
-                    if frame['idx'] == 0:
-                        frame_buffer.put(frame['value'].get())
-
-                # Remove the finished frames from the processing queue
-                active_frames = [x for x in active_frames if x['idx'] > 0]
-
-                # Finish evaluating every frame in the processing queue and advanced their position in the sequence
-                for frame in list(reversed(active_frames)):
-                    frame['value'] = frame['value'].get()
-                    frame['idx'] -= 1
-
-                    if frame['idx'] == 0:
-                        # Split this up into individual threads for prep_frame since it doesn't support batch size
-                        active_frames += [{'value': extract_frame(frame['value'], i), 'idx': 0} for i in range(1, len(frame['value'][0]))]
-                        frame['value'] = extract_frame(frame['value'], 0)
-                
-                # Finish loading in the next frames and add them to the processing queue
-                if next_frames is not None:
-                    frames = next_frames.get()
-                    if len(frames) == 0:
-                        vid_done = True
-                    else:
-                        active_frames.append({'value': frames, 'idx': len(sequence)-1})
-
-                # Compute FPS
-                frame_times.add(time.time() - start_time)
-                fps = args.video_multiframe / frame_times.get_avg()
-            else:
-                fps = 0
-            
-            fps_str = 'Processing FPS: %.2f | Video Playback FPS: %.2f | Frames in Buffer: %d' % (fps, video_fps, frame_buffer.qsize())
-            if not args.display_fps:
-                print('\r' + fps_str + '    ', end='')
-
-    except KeyboardInterrupt:
-        print('\nStopping...')
-    
-    cleanup_and_exit()
 
 def evaluate(net:Yolact, dataset, train_mode=False):
     net.detect.use_fast_nms = args.fast_nms
@@ -1057,8 +878,16 @@ if __name__ == '__main__':
     elif args.trained_model == 'latest':
         args.trained_model = SavePath.get_latest('weights/', cfg.name)
 
+    is_torch_model = '.pth' in args.trained_model
+
     if args.config is None:
-        model_path = SavePath.from_str(args.trained_model)
+
+        confg_path = args.trained_model
+
+        if not is_torch_model:
+            confg_path = args.trained_model.replace('.onnx', '.pth')
+
+        model_path = SavePath.from_str(confg_path)
         # TODO: Bad practice? Probably want to do a name lookup instead.
         args.config = model_path.model_name + '_config'
         print('Config not specified. Parsed %s from the file name.\n' % args.config)
@@ -1094,13 +923,16 @@ if __name__ == '__main__':
             dataset = None        
 
         print('Loading model...', end='')
-        net = Yolact()
-        net.load_weights(args.trained_model)
-        net.eval()
-        print(' Done.')
-
-        if args.cuda:
-            net = net.cuda()
+        if is_torch_model:
+            net = Yolact()
+            net.load_weights(args.trained_model)
+            net.eval()
+            if args.cuda:
+                net = net.cuda()
+        else:
+            # assuming it is an onnx model otherwise
+            net = YolactOnnx(args.trained_model)
+        
 
         evaluate(net, dataset)
 

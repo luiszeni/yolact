@@ -42,6 +42,12 @@ I am assuming that you will use (and know how to use) docker to run this code. I
  wget https://img.devrant.com/devrant/rant/r_1397964_58Lc4.jpg -O meme03.jpg
  ``` 
 
+- If you will test using videos you will also need to download a meme video Xp:
+
+ ```Shell
+ wget http://inf.ufrgs.br/~lfazeni/yolact/meme.mp4
+ ``` 
+
  - Build the docker machine
  ```Shell
  docker build -f docker/Dockerfile -t yolact .
@@ -67,33 +73,64 @@ I am assuming that you will use (and know how to use) docker to run this code. I
 
 ## Converting the model.pth to model.onnx
 
-TODO bro
+To convert the .pth file to the .onnx  format just run the following command:
 
  ```Shell
- python3 convert_to_onnx.py 
+ python3 pth_to_onnx.py --trained_model=weights/yolact_resnet50_54_800000.pth
  ``` 
 
+It will save in the same directory with the .onnx extenssion.
 
 
-## Testing in single images using the model.pth
+## Testing in single images
+
+To test using the .pth files use following commands:
+
 ```Shell
 # Display qualitative results on the specified image.
-python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.15 --top_k=15 --image=meme01.jpg 
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --image=meme01.jpg 
 
 # Process an image and save it to another file.
-python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.15 --top_k=15 --image=meme01.jpg:meme01_out.jpg
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --image=meme01.jpg:meme01_out.jpg
 ```
 
-## Testing in single images using the model.onnx
+To test using the .onnx you just need to change .pth to .onnx:
+
 ```Shell
-
 # Display qualitative results on the specified image.
-python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.15 --top_k=15 --image=meme01.jpg 
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --image=meme01.jpg 
 
 # Process an image and save it to another file.
-python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.15 --top_k=15 --image=meme01.jpg:meme01_out.jpg
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --image=meme01.jpg:meme01_out.jpg
 ```
 
+## Testing on Video
+
+To test using the .pth files use following commands:
+```Shell
+# Process a video while displaying it in a opencv window.
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --video=meme.mp4
+
+# Process a video and save it to another file. This is unoptimized.
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --video=meme.mp4:meme_out.mp4
+```
+
+To test using the .onnx files use following commands:
+```Shell
+# Process a video while displaying it in a opencv window.
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --video=meme.mp4
+
+# Process a video and save it to another file. This is unoptimized.
+python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --video=meme.mp4:meme_out.mp4
+```
+
+## The universe is inside the eval.py
+
+As you can tell, `eval.py` can do a ton of stuff. Run the `--help` command to see everything it can do.
+```Shell
+python3 eval.py --help
+```
+I did not checked if all other methods are still working. 
 
 
 # Citation
