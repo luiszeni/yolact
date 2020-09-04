@@ -27,7 +27,6 @@ from pathlib import Path
 from collections import OrderedDict
 from PIL import Image
 
-import matplotlib.pyplot as plt
 import cv2
 from layers import Detect
 
@@ -610,9 +609,8 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
         img_numpy = img_numpy[:, :, (2, 1, 0)]
 
     if save_path is None:
-        plt.imshow(img_numpy)
-        plt.title(path)
-        plt.show()
+        cv2.imshow(path, img_numpy)
+        cv2.waitKey(0)
     else:
         cv2.imwrite(save_path, img_numpy)
 
@@ -784,9 +782,8 @@ def evaluate(net:Yolact, dataset, train_mode=False):
             if args.display:
                 if it > 1:
                     print('Avg FPS: %.4f' % (1 / frame_times.get_avg()))
-                plt.imshow(img_numpy)
-                plt.title(str(dataset.ids[image_idx]))
-                plt.show()
+                cv2.imshow(path, img_numpy)
+                cv2.waitKey(0)
             elif not args.no_bar:
                 if it > 1: fps = 1 / frame_times.get_avg()
                 else: fps = 0
