@@ -133,6 +133,41 @@ python3 eval.py --help
 I did not checked if all other methods are still working. 
 
 
+
+## Having fun: Background segmentation with YOLACT
+
+To use .pth files:
+
+```Shell
+# Removing the background, maintaining all target classes in the image and display in the cv2 window
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --image=meme01.jpg 
+
+# Removing the background, maintaining all target classes in the image and save to other file
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --image=meme01.jpg:meme01_out.jpg
+
+# You can use use the --classes to select classes of interest
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --image=meme01.jpg --classes cat dog
+
+# And it also work with videos =o
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --video=meme.mp4 --classes cat
+```
+
+To use .onnx files:
+
+```Shell
+# Removing the background, maintaining all target classes in the image and display in the cv2 window
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --image=meme01.jpg 
+
+# Removing the background, maintaining all target classes in the image and save to other file
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --image=meme01.jpg:meme01_out.jpg
+
+# You can use use the --classes to select classes of interest
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --image=meme01.jpg --classes cat dog
+
+# And it also work with videos =o
+python3 background_seg.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --video=meme.mp4 --classes cat
+```
+
 # Citation
 If you use YOLACT or this code base in your work, please cite
 ```
