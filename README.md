@@ -9,14 +9,14 @@
        ╚═╝    ╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝   ╚═╝         \
 ```
 
-In this repo, I organized the code to convert the YOLOACT.pth model to onnx. The repo just organizes the code in a better way. The original onnx conversion comes from this repo: https://github.com/Ma-Dan/yolact/tree/onnx and this thread: https://github.com/dbolya/yolact/issues/74  (thanks for the people involved :])
+In this repo, I organized the code to convert the YOLOACT.pth model to onnx. The inspiration to create onnx conversion comes from this repo: https://github.com/Ma-Dan/yolact/tree/onnx and this thread: https://github.com/dbolya/yolact/issues/74  (thanks for the people involved :])
 
 Here I will focus on the conversion of the model of the following paper:
  - [YOLACT: Real-time Instance Segmentation](https://arxiv.org/abs/1904.02689)
 
 I did no experiments with the YOLACT++, and I am omitting it in this readme.
 
-Please refer to the original repo  (https://github.com/dbolya/yolact) for more information regarding training and evaluating in the COCO dataset.
+Please refer to the original repo  (https://github.com/dbolya/yolact) for more information regarding training and evaluating the COCO dataset.
 
 
 # Installation
@@ -42,7 +42,7 @@ I am assuming that you will use (and know how to use) docker to run this code. I
  wget https://img.devrant.com/devrant/rant/r_1397964_58Lc4.jpg -O meme03.jpg
  ``` 
 
-- If you will test using videos you will also need to download a meme video Xp:
+- If you test using videos, you will also need to download a meme video Xp:
 
  ```Shell
  wget http://inf.ufrgs.br/~lfazeni/yolact/meme.mp4
@@ -60,7 +60,7 @@ I am assuming that you will use (and know how to use) docker to run this code. I
  --name yolact yolact
  ```
   
-- If you exit the container at any moment of the future, you can enter in the container again with this command.
+- If you exit the container at any moment of the future, you can enter the container again.
  ```Shell
  docker start -ai yolact 
  ```
@@ -79,12 +79,12 @@ To convert the .pth file to the .onnx  format just run the following command:
  python3 pth_to_onnx.py --trained_model=weights/yolact_resnet50_54_800000.pth
  ``` 
 
-It will save in the same directory with the .onnx extenssion.
+It will save in the same directory with the .onnx extension.
 
 
 ## Testing in single images
 
-To test using the .pth files use following commands:
+To test using the .pth files, use the following commands:
 
 ```Shell
 # Display qualitative results on the specified image.
@@ -106,18 +106,18 @@ python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_t
 
 ## Testing on Video
 
-To test using the .pth files use following commands:
+To test using the .pth files, use the following commands:
 ```Shell
-# Process a video while displaying it in a opencv window.
+# Process a video while displaying it in an opencv window.
 python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --video=meme.mp4
 
 # Process a video and save it to another file. This is unoptimized.
 python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.pth --score_threshold=0.3 --top_k=15 --video=meme.mp4:meme_out.mp4
 ```
 
-To test using the .onnx files use following commands:
+To test using the .onnx files, use the following commands:
 ```Shell
-# Process a video while displaying it in a opencv window.
+# Process a video while displaying it in an opencv window.
 python3 eval.py --trained_model=weights/yolact_resnet50_54_800000.onnx --score_threshold=0.3 --top_k=15 --video=meme.mp4
 
 # Process a video and save it to another file. This is unoptimized.
@@ -130,7 +130,7 @@ As you can tell, `eval.py` can do a ton of stuff. Run the `--help` command to se
 ```Shell
 python3 eval.py --help
 ```
-I did not checked if all other methods are still working. 
+I did not check if all other methods are still working. 
 
 
 
